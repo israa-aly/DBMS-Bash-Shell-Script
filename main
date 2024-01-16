@@ -1,0 +1,867 @@
+#!/bin/bash
+directory="./DB"
+
+function containsSpecialChars() {
+    if [[ "$1" =~ [^a-zA-Z0-9_[:space:]] ]]; then
+        return 0  
+    else
+        return 1  
+    fi
+}
+function update_f_table2 {
+    tbl=$(zenity --entry --title="Update Table" --text="Enter table name:")
+
+    if [ ! -f "tables/$tbl" ]; then
+        zenity --error --text="Error: Table '$tbl' not found."
+        return
+    fi
+    
+    arrcol=()
+    arrval=()
+
+    column_names=($(awk -F':' 'NR==1 {for (i=1; i<=NF; i++) print $i}' "tables/$tbl"))
+
+    menu_text="Column names in '$tbl':"
+    for ((i=1; i<=${#column_names[@]}; i++)); do
+        menu_text+="\n $i. ${column_names[$((i-1))]}"
+    done
+
+    col=$(zenity --entry --title="Update Table" --text="$menu_text\n\nEnter the column for the condition:")
+
+    if [[ $col -ge 1 && $col -le ${#column_names[@]} ]]; then
+        arrcol+=("$col")  # Add the column to the array
+
+        val=$(zenity --entry --title="Update Table" --text="Enter the value for the condition:")
+        arrval+=("$val")  # Add the value to the array
+
+        
+        update_col=$(zenity --entry --title="Update Table" --text="Enter the column to update:")
+
+        if [[ $update_col -eq 1 ]]; then
+            zenity --error --text="The primary key cannot be edited."
+        else
+            update_val=$(zenity --entry --title="Update Table" --text="Enter the new value:")
+
+            
+            updated_count=$(awk -v col="$col" -v val="$val" -v ucol="$update_col" -v uval="$update_val" -F':' '
+                BEGIN {
+                    updated_count = 0
+                }
+                {
+                    if ($col == val) {
+                        # Update the specific field while preserving the original separator
+                        $ucol = uval
+                        gsub(/ /, ":", $0)
+                        updated_count++
+                    }
+                    print $0 > "tempfile"
+                }
+                END {
+                    close("tempfile")
+                    system("mv tempfile " FILENAME)
+                    print updated_count
+                }' "tables/$tbl")
+
+            zenity --info --text="Rows updated: $updated_count"
+        fi
+    else
+        zenity --error --text="Invalid input. Please enter a valid number."
+    fi
+}
+function update_f_table {
+    tbl=$(zenity --entry --title="Update Table" --text="Enter table name:")
+
+    if [ ! -f "tables/$tbl" ]; then
+        zenity --error --text="Error: Table '$tbl' not found."
+        return
+    fi
+
+    # Reset arrays at the beginning of the function
+    arrcol=()
+    arrval=()
+
+    column_names=($(awk -F':' 'NR==1 {for (i=1; i<=NF; i++) print $i}' "tables/$tbl"))
+
+    # Display column names in Zenity
+    menu_text="Column names in '$tbl':"
+    for ((i=1; i<=${#column_names[@]}; i++)); do
+        menu_text+="\n $i. ${column_names[$((i-1))]}"
+    done
+
+    col=$(zenity --entry --title="Update Table" --text="$menu_text\n\nEnter the column for the condition:")
+
+    if [[ $col -ge 1 && $col -le ${#column_names[@]} ]]; then
+        arrcol+=("$col")  # Add the column to the array
+
+        val=$(zenity --entry --title="Update Table" --text="Enter the value for the condition:")
+        arrval+=("$val")  # Add the value to the array
+
+        # Collect update information
+        update_col=$(zenity --entry --title="Update Table" --text="Enter the column to update:")
+
+        if [[ $update_col -eq 1 ]]; then
+            zenity --error --text="The primary key cannot be edited."
+        else
+            update_val=$(zenity --entry --title="Update Table" --text="Enter the new value:")
+
+            # Retrieve constraints for each field
+            constraints=$(awk -F ':' '{print $2}' "metaData/${tbl}meta" | tr '\n' ':')
+            constraints=${constraints%:}  # Remove trailing colon
+            IFS=':' read -r -a constraints_array <<< "$constraints"
+
+            # Check if the new value violates any constraints
+            if violates_constraints "$update_val" "${constraints_array[$((update_col-1))]}"; then
+                zenity --error --text="Error: The new value violates constraints for column $update_col. it should be ${constraints_array[$((update_col-1))]}"
+            else
+                # Perform update using awk
+                updated_count=$(awk -v col="$col" -v val="$val" -v ucol="$update_col" -v uval="$update_val" -F':' '
+                    BEGIN {
+                        updated_count = 0
+      
+              }
+                    {
+                        if ($col == val) {
+                            # Update the specific field while preserving the original separator
+                            $ucol = uval
+                            gsub(/ /, ":", $0)
+                            updated_count++
+                        }
+                        print $0 > "tempfile"
+                    }
+                    END {
+                        close("tempfile")
+                        system("mv tempfile " FILENAME)
+                        print updated_count
+                    }' "tables/$tbl")
+
+                zenity --info --text="Rows updated: $updated_count"
+            fi
+        fi
+    else
+        zenity --error --text="Invalid input. Please enter a valid number."
+    fi
+}
+
+# Function to check if the new value violates constraints
+function violates_constraints {
+    case "$2" in
+        "Int")
+            [[ "$1" =~ ^[0-9]+$ ]] || return 0  # Violates constraint: Value is not an integer
+            ;;
+        "String")
+            [[ "$1" =~ ^[a-zA-Z]+$ && ! "$1" =~ [[:space:]] ]] || return 0  # Violates constraint: Value is not a string or contains spaces
+            ;;
+        *)
+            ;;
+    esac
+    return 1  # Does not violate constraint
+}
+
+function create {
+    table_name=$(zenity --entry --title="Create Table" --text="Please enter the table name:")
+
+    if [ $? -ne 0 ]; then
+        echo "Operation canceled."
+        return
+    fi
+
+    table_name=$(echo "$table_name" | tr ' ' '_')
+
+    if [[ -z "$table_name" ]] || [[ ! "${table_name:0:1}" =~ [a-zA-Z] ]] || containsSpecialChars "$table_name"; then
+        zenity --error --title="Error" --text="Invalid table name. Table name must start with a letter and cannot contain special characters except for underscores."
+        return
+    fi
+
+    if [ -e "tables/$table_name" ] || [ -e "metaData/${table_name}meta" ]; then
+        zenity --error --title="Error" --text="Table $table_name already exists. Please choose a different name."
+        return
+    fi
+
+    touch "tables/$table_name"
+    touch "metaData/${table_name}meta"
+
+    num_fields=$(zenity --entry --title="Create Table" --text="Enter the number of required fields, ensuring that the first column will be the unique id:")
+
+    if ! [[ $num_fields =~ ^[0-9]+$ ]]; then
+
+        zenity --error --title="Error" --text="Please enter a valid number for the fields."
+if [ ! -s "$table_name" ]; then
+		rm "tables/$table_name"
+                rm "metaData/${table_name}meta"
+	    fi
+        return
+
+        return
+    fi
+
+    if [ "$num_fields" -eq 0 ]; then
+        zenity --error --title="Error" --text="Please enter a valid number greater than 0."
+if [ ! -s "$table_name" ]; then
+		rm "tables/$table_name"
+                rm "metaData/${table_name}meta"
+	    fi
+        return
+        return
+    fi
+
+    entered_fields=()
+
+    f=1
+    while [ "$f" -le "$num_fields" ]; do
+        field=$(zenity --entry --title="Create Table" --text="Enter field $f name:")
+
+        if [ $? -ne 0 ]; then
+	    if [ ! -s "$table_name" ]; then
+		rm "tables/$table_name"
+                rm "metaData/${table_name}meta"
+	    fi
+	    echo "Operation canceled."
+zenity --error --title="Error" --text="The tables is not created"
+	    return
+	fi
+        field=$(echo "$field" | tr ' ' '_')
+
+        if [[ -z "$field" ]] || [[ ! "${field:0:1}" =~ [a-zA-Z] ]] || containsSpecialChars "$field"; then
+            zenity --error --title="Error" --text="Invalid field name. Field name must start with a letter and cannot contain special characters except for underscores."
+            continue
+        fi
+
+        if [[ " ${entered_fields[@]} " =~ " $field " ]]; then
+            zenity --error --title="Error" --text="Field name '$field' already entered. Please choose a different name."
+            continue
+        fi
+
+        entered_fields+=("$field")  # Add the field name to the array
+
+        dtype=$(zenity --list --title="Create Table" --text="Select the datatype of field $field:" --column="Options" "Int" "String")
+
+        case $dtype in
+            "Int")
+                echo "$field:Int" >> "metaData/${table_name}meta"
+                ;;
+            "String")
+                echo "$field:String" >> "metaData/${table_name}meta"
+                ;;
+            *)
+                zenity --error --title="Error" --text="Invalid option. Please select again."
+                continue
+                ;;
+        esac
+
+        f=$((f+1))
+    done
+
+    field_names=$(awk -F ":" '{print $1}' "metaData/${table_name}meta" | tr '\n' ':')
+    field_names=${field_names%:}  
+    echo "$field_names" >> "tables/${table_name}"
+
+    zenity --info --title="Success" --text="Table $table_name created successfully."
+}
+
+function delete_f_table {
+    tbl=$(zenity --entry --title="Delete Table" --text="Enter table name:")
+
+   
+    if [ $? -ne 0 ]; then
+        return
+    fi
+
+    if [ ! -f "tables/$tbl" ]; then
+        zenity --error --text="Error: Invalid Table name."
+        return
+    fi
+
+    column_names=($(awk -F':' 'NR==1 {for (i=1; i<=NF; i++) print $i}' "tables/$tbl"))
+
+
+    menu_text="Select the number of conditions:\n"
+    for ((i=1; i<=${#column_names[@]}; i++)); do
+        menu_text+=" $i. ${column_names[$((i-1))]}\n"
+    done
+
+    num=$(zenity --entry --title="Number of Conditions" --text="$menu_text" --entry-text="1")
+
+    
+    if [ $? -ne 0 ]; then
+        return
+    fi
+
+    if [[ ! $num =~ ^[1-9][0-9]*$ || $num -gt ${#column_names[@]} ]]; then
+        zenity --error --text="Invalid input. Please enter a valid number."
+        return
+    fi
+
+    arrcol=()
+    arrval=()
+
+   
+    for ((i=1; i<=$num; i++)); do
+        col=$(zenity --entry --title="Enter Column $i" --text="Enter column $i of condition:")
+
+        
+        if [ $? -ne 0 ]; then
+            return
+        fi
+
+        if [[ ! $col =~ ^[1-9][0-9]*$ || $col -gt ${#column_names[@]} ]]; then
+            zenity --error --text="Invalid input. Please enter a valid number."
+            return
+        fi
+
+        arrcol+=("$col")  # Add the column to the array
+
+        val=$(zenity --entry --title="Enter Value $i" --text="Enter value of column $i of the condition:")
+
+        
+        if [ $? -ne 0 ]; then
+            return
+        fi
+
+        arrval+=("$val")  # Add the value to the array
+    done
+
+    deleted_count=$(awk -v num="$num" -v cols="${arrcol[*]}" -v vals="${arrval[*]}" -F':' '
+        BEGIN {
+            split(cols,arrcol," ")
+            split(vals,arrval," ")
+            deleted_count = 0
+        }
+        {
+            match_count=0
+            for (i = 1; i <= num; i++) {
+                if ($arrcol[i] == arrval[i]) {
+                    match_count++
+                    deleted_count++
+                }
+            }
+            if (match_count == 0) {
+                print $0 > "tempfile";
+            }
+        }
+        END {
+            close("tempfile");
+            system("mv tempfile " FILENAME);
+            print "Rows deleted: " deleted_count
+        }' "tables/$tbl")
+
+    zenity --info --text="Rows deleted: $deleted_count"
+}
+
+
+
+function remove {
+    table_name=$(zenity --list --title="Choose a table to delete" --column="Tables" $(ls tables))
+
+    if [ $? -ne 0 ]; then
+        return
+    fi
+
+    if [ -z "$table_name" ]; then
+        zenity --error --text="Invalid option. Please select a table."
+        return
+    fi
+
+    zenity --question --title="Confirm Deletion" --text="Are you sure you want to delete the table '$table_name'?" --ok-label="Yes" --cancel-label="No"
+
+    
+    if [ $? -ne 0 ]; then
+        return
+    fi
+
+    if [ $? -eq 0 ]; then
+       
+        rm "tables/$table_name"
+        rm "metaData/${table_name}meta"
+        zenity --info --text="Table '$table_name' has been deleted successfully."
+    else
+        zenity --info --text="Deletion canceled."
+    fi
+}
+
+function insert() {
+    
+    table_name=$(zenity --list --title="Select table to insert into" --column="Table Name" $(ls tables))
+
+    case $? in
+        0) 
+            ;;
+        1) 
+            echo "Operation canceled by user."
+            return
+            ;;
+
+        -1) 
+            echo "Error or dialog closed."
+            return
+            ;;
+    esac
+
+    if [ -z "$table_name" ]; then
+        echo "Invalid option.Please select again."
+        return
+    fi
+
+    values_array=()
+    metaFile="metaData/${table_name}meta"
+    dataFile="tables/${table_name}"
+
+  
+    field_names=$(awk -F ":" '{print $1}' "$metaFile" | tr '\n' ':')
+    constraints=$(awk -F ":" '{print $2}' "$metaFile" | tr '\n' ':')
+    IFS=":" read -ra field_names_array <<< "$field_names"
+
+    i=0
+    for field in "${field_names_array[@]}"; do
+        constraint=$(echo "$constraints" | cut -d ':' -f $((i+1)))
+
+       
+        user_input=$(zenity --entry --title="Enter value for $field of datatype $constraint" --text="$field:")
+
+        case $? in
+            0) 
+                ;;
+            1) 
+                echo "Operation canceled by user."
+                return
+                ;;
+            -1)
+                echo "Error or dialog closed."
+                return
+                ;;
+        esac
+
+        values_array+=("$user_input")
+        i=$((i+1))
+    done
+
+    
+    Ids=($(cut -d ':' -f 1 "$dataFile"))
+    if echo "${Ids[@]}" | grep -q "\<${values_array[0]}\>"; then
+        zenity --error --text="Error: ID '${values_array[0]}' already exists in the table '$table_name'. Insertion failed."
+        return
+    fi
+
+   
+    for ((i=0; i<${#values_array[@]}; i++)); do
+        field_name=$(echo "$field_names" | cut -d ':' -f $((i+1)))
+        constraint=$(echo "$constraints" | cut -d ':' -f $((i+1)))
+
+        
+        case "$constraint" in
+            "Int")
+                [[ "${values_array[i]}" =~ ^[0-9]+$ ]] || {
+                    zenity --error --text="Invalid input for $field_name. Must be an integer."
+                    return
+                }
+                ;;
+            "String")
+                [[ "${values_array[i]}" =~ ^[a-zA-Z]+$ ]] || {
+                    zenity --error --text="Invalid input for $field_name. Must be a string and does not contain spaces."
+                    return
+                }
+                ;;
+            *)
+                ;;
+        esac
+    done
+
+  
+    echo "${values_array[@]}" | tr ' ' ':' >> "$dataFile"
+    zenity --info --text="Table '$table_name' has been inserted successfully."
+}
+
+function connect_menu {
+    while true; do
+        choice=$(zenity --list --title="Connect Menu" --text="Select an option:" \
+                        --column="Options" \
+                        "Create Table" "List Tables" "Drop Table" "Insert into Table" "Select from Table" "Update Table" "Delete from Table" "Main Menu" "Exit")
+
+        if [ $? -ne 0 ]; then
+            echo "Operation canceled."
+		cd ..
+            break
+        fi
+
+        case $choice in
+            "Create Table")
+                create
+                ;;
+            "List Tables")
+                list_tables_gui
+                ;;
+            "Drop Table")
+                remove
+                ;;
+            "Insert into Table")
+                insert
+                ;;
+            "Select from Table")
+                select_menu
+                ;;
+            "Update Table")
+                update_f_table
+                ;;
+            "Delete from Table")
+                delete_f_table
+                ;;
+            "Main Menu")
+		cd ..
+                main_menu
+                ;;
+            "Exit")
+                exit 0
+                ;;
+            *)
+                zenity --error --title="Error" --text="Invalid option. Please select again."
+                ;;
+        esac
+
+       
+        if [ $? -ne 0 ]; then
+            echo "Operation canceled."
+            break
+        fi
+    done
+}
+
+function list_tables_gui {
+    tables_list=$(ls tables)
+
+    if [ $? -ne 0 ]; then
+        echo "Operation canceled."
+        connect_menu
+        return
+    fi
+
+    zenity --list --title="Tables List" --column="Tables" $tables_list
+    
+    
+    if [ $? -ne 0 ]; then
+        echo "Operation canceled."
+        connect_menu
+    fi
+}
+
+function select_all {
+    table_name=$1
+if [ ! -f "tables/$table_name" ]; then
+	zenity --error --title="Error" --text="Invalid table name "
+	    return
+
+	else
+    content=$(cat "tables/$table_name")
+    zenity --info --title="Select All" --text="Content of $table_name:\n$content"
+fi
+}
+function select_specific_record {
+    table_name=$1
+
+    if [ ! -f "tables/$table_name" ]; then
+        zenity --error --title="Error" --text="Invalid table name "
+        return
+    fi
+
+    column_names=($(awk -F':' 'NR==1 {for (i=1; i<=NF; i++) print i, $i}' "tables/$table_name"))
+
+   
+    numbered_columns=()
+    for ((i=0; i<${#column_names[@]}; i+=2)); do
+        numbered_columns+=("$((i/2 + 1)) ${column_names[$((i+1))]}")
+    done
+
+  
+    result=$(zenity --forms --title="Select Specific Record" --text="Enter information to select specific records from $table_name" \
+        --add-entry="Enter the number of Conditions : " \
+        --add-list="Columns:" --list-values="$(printf "%s\n" "${numbered_columns[@]}")" \
+        --separator=":")
+
+  
+    if [ $? -ne 0 ]; then
+        echo "Operation canceled."
+        return
+    fi
+
+   
+    IFS=":" read -r num selected_columns <<< "$result"
+
+    if [[ ! $num =~ ^[1-9][0-9]*$ || $num -gt ${#column_names[@]}/2 ]]; then
+        zenity --error --title="Error" --text="Invalid input. Please enter a valid number."
+        return
+    fi
+
+    arrcol=()
+    arrval=()
+
+   
+    for ((i=1; i<=$num; i++)); do
+        while true; do
+         
+            col=$(zenity --entry --title="Enter Column Number" --text="Enter column $i of condition:")
+
+      
+            if [ $? -ne 0 ]; then
+                echo "Operation canceled."
+                return
+            fi
+
+            if [[ $col -ge 1 && $col -le ${#column_names[@]} ]]; then
+                arrcol+=("$col")  # Add the column to the array
+
+                
+                val=$(zenity --entry --title="Enter Value" --text="Enter the value for column $col:")
+
+                if [ $? -ne 0 ]; then
+                    echo "Operation canceled."
+                    return
+                fi
+
+                arrval+=("$val")  # Add the value to the array
+                break
+            else
+                zenity --error --title="Error" --text="Invalid input. Please enter a valid number."
+            fi
+        done
+    done
+
+    result=$(awk -F':' -v num="$num" -v cols="${arrcol[*]}" -v vals="${arrval[*]}" 'BEGIN {
+        split(cols, arrcol, " ")
+        split(vals, arrval, " ")
+    }
+    {
+        match_count = 0
+        for (i = 1; i <= num; i++) {
+            if ($arrcol[i] == arrval[i]) {
+                match_count++
+            }
+        }
+        if (match_count > 0) {
+            print $0
+        }
+    }' "tables/$table_name")
+
+    zenity --info --title="Selected Records" --text="Selected records from $table_name:\n$result"
+}
+
+
+function select_specific_column {
+    table_name=$1
+
+    if [ ! -f "tables/$table_name" ]; then
+        zenity --error --title="Error" --text="Invalid table name "
+        return
+    fi
+
+    column_names=($(awk -F':' 'NR==1 {for (i=1; i<=NF; i++) print i, $i}' "tables/$table_name"))
+
+    numbered_columns=()
+    for ((i=0; i<${#column_names[@]}; i+=2)); do
+        numbered_columns+=("$((i/2 + 1)) ${column_names[$((i+1))]}")
+    done
+
+  
+    result=$(zenity --forms --title="Select Specific Columns" --text="Enter information to select specific Columns $table_name" \
+        --add-entry="Number of Columns:" \
+        --add-list="Columns:" --list-values="$(printf "%s\n" "${numbered_columns[@]}")" \
+        --separator=":")
+
+    if [ $? -ne 0 ]; then
+        echo "Operation canceled."
+        return
+    fi
+
+
+    IFS=":" read -r num selected_columns <<< "$result"
+
+    if [[ ! $num =~ ^[1-9][0-9]*$ || $num -gt ${#column_names[@]}/2 ]]; then
+        zenity --error --title="Error" --text="Invalid input. Please enter a valid number."
+        return
+    fi
+
+    arrcol=()
+
+  
+    for ((i=1; i<=$num; i++)); do
+        while true; do
+           
+            col=$(zenity --entry --title="Enter Column Number" --text="Enter num of column $i ")
+
+          
+            if [ $? -ne 0 ]; then
+                echo "Operation canceled."
+                return
+            fi
+
+            if [[ $col -ge 1 && $col -le ${#column_names[@]} ]]; then
+                arrcol+=("$col")  
+                break
+            else
+                zenity --error --title="Error" --text="Invalid input.Please enter a valid number."
+            fi
+        done
+    done
+
+   
+    result=$(awk -F':' -v num="$num" -v cols="${arrcol[*]}"  'BEGIN {
+        split(cols, arrcol, " ")
+    }
+    {
+        for (i = 1; i <= num; i++) {
+            if (i<num){
+                printf "%s:", $arrcol[i]}
+            else 
+                printf $arrcol[i]
+        }
+        printf "\n"
+    }' "tables/$table_name")
+
+    zenity --info --title="Selected Columns" --text="Selected Columns from $table_name:\n$result"
+}
+
+function select_menu {
+    cd /DB 
+    
+    PS3="Enter your choice: "
+    
+    while true; do
+        choice=$(zenity --list --title="Select Menu" --text="Choose an option" --column="Options" "Select All" "Select Specific Record" "Select Specific Column" "Back to Previous Menu" "Main Menu" "Exit")
+
+        if [ $? -ne 0 ]; then
+            echo "Operation canceled."
+            return
+        fi
+
+        case $choice in
+            "Select All")
+                table_name=$(zenity --entry --title="Enter Table Name" --text="Enter table name:")
+                select_all "$table_name"
+                ;;
+            "Select Specific Record")
+                table_name=$(zenity --entry --title="Enter Table Name" --text="Enter table name:")
+                select_specific_record "$table_name"
+                ;;
+            "Select Specific Column")
+                table_name=$(zenity --entry --title="Enter Table Name" --text="Enter table name:")
+                select_specific_column "$table_name"
+                ;;
+            "Back to Previous Menu")
+                connect_menu
+                ;;
+            "Main Menu")
+                main_menu
+                ;;
+            "Exit")
+                exit 0
+                ;;
+            *)
+                echo "Invalid choice"
+                ;;
+        esac
+    done
+}
+
+
+
+function create_db {
+    db_name=$(zenity --entry --title="Create DB" --text="Enter your DB name:")
+    
+    containsSpecialChars() {
+        if [[ "$db_name" =~ [^a-zA-Z0-9_[:space:]] ]]; then
+            return 0  
+        else
+            return 1  
+        fi
+    }
+
+    if [[ -z "$db_name" ]] || [[ ! "${db_name:0:1}" =~ [a-zA-Z] ]] || containsSpecialChars "$db_name"; then
+        zenity --error --title="Error" --text="Invalid DB name. DB name must start with a letter and cannot contain special characters except for underscores (_)"
+    elif [ -d "$db_name" ]; then
+        zenity --error --title="Error" --text="Error: DB '$db_name' already exists"
+    else
+        db_name=$(echo "$db_name" | tr ' ' '_')
+        mkdir "$db_name"
+        cd "$db_name"
+        mkdir "tables"
+        mkdir "metaData"
+        cd ..
+        zenity --info --title="Success" --text="$db_name DB created successfully"
+    fi
+}
+
+function list_db {
+    db_list=$(ls -d */ | sed 's#/##')
+    zenity --info --title="List DB" --text="List of available DBs:\n$db_list"
+}
+
+function drop_db {
+    db_name=$(zenity --entry --title="Drop DB" --text="Enter DB name:")
+
+    if [[ -z "$db_name" ]] || [[ "$db_name" =~ ^[0-9] ]] || [ ! -d "$db_name" ]; then
+        zenity --error --title="Error" --text="Invalid DB name"
+    else
+        rm -r "$db_name"
+        zenity --info --title="Success" --text="$db_name dropped successfully"
+    fi
+}
+
+function connect_to_db {
+    db_name=$(zenity --entry --title="Connect to DB" --text="Enter DB name:")
+
+    if [[ -z "$db_name" ]] || [[ "$db_name" =~ ^[0-9] ]] || [ ! -d "$db_name" ]; then
+        zenity --error --title="Error" --text="Invalid DB name"
+    else
+        cd "./$db_name"
+        zenity --info --title="Success" --text="You are now in $db_name DB"
+        connect_menu
+    fi
+}
+
+function main_menu {
+    while true; do
+        choice=$(zenity --list --title="Main Menu" --text="Choose an option" --column="Options" "Create DB" "List DB" "Drop DB" "Connect to DB" "Exit")
+
+        
+        if [ $? -ne 0 ]; then
+            zenity --question --title="Exit Confirmation" --text="Are you sure you want to exit?" --ok-label="Yes" --cancel-label="No"
+
+           
+            if [ $? -eq 0 ]; then
+                exit 0
+            fi
+        fi
+
+        case $choice in
+            "Create DB")
+                create_db
+                ;;
+            "List DB")
+                list_db
+                ;;
+            "Drop DB")
+                drop_db
+                ;;
+            "Connect to DB")
+                connect_to_db
+                ;;
+            "Exit")
+                zenity --question --title="Exit Confirmation" --text="Are you sure you want to exit?" --ok-label="Yes" --cancel-label="No"
+
+              
+                if [ $? -eq 0 ]; then
+                    exit 0
+                fi
+                ;;
+           
+        esac
+    done
+}
+
+# Check if the directory exists and create it if not
+if [ -d "$directory" ]; then
+    cd "$directory"
+    main_menu
+else
+    zenity --info --text="Directory DB does not exist. Creating it"
+    mkdir "$directory"
+    cd "$directory"
+    main_menu
+fi
