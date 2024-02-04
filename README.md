@@ -1,35 +1,27 @@
-# DBMS-bash-project
+# DBMS bash shell script 
 
+This project is a simple Database Management System (DBMS) shell implemented in Bash. It provides basic functionalities for creating, managing, and interacting with databases and tables.
 
-This is a simple bash script for managing a basic database system. It provides functionality to create, list, drop databases, and connect to them. Inside each database, you can perform operations like creating tables, inserting data, updating, deleting, and selecting data.
+# Features
 
-## Getting Started
+- Create ,list,drop,connect to database (Main Menu)
+- Create, list, and drop tables (connect Men)
+- Insert, update, and delete records
+- Select all, records and columns (select Menu)
+- select by more than one condition you should enter the num of conditions then enter the num of first column of condition and its value ..etc (select based on OR operation: it means that it will select the rows that match any of the conditions )
+- User-friendly interface using Zenity dialogs
 
-Run the script:
-chmod +x db_management.sh
-./db_management.sh
-Follow the on-screen instructions to navigate through the system.
-### Features
-1) Database Operations:
+ # Prerequisites
+- Bash shell
+- Zenity (a GTK dialog utility) : sudo yum install zenity
 
-- Create a new database.
+# File Structure
+main.sh: Main script to start the DBMS shell.
+functions/: Directory containing individual Bash scripts for different DBMS functions.
 
-- List existing databases.
-
-- Drop a database.
-
-2) Table Operations:
-
-- Create a new table.
-
-- Insert data into a table.
-
-- Update data in a table.
-
-- Delete data from a table.
-
-- Select data from a table.
-
+# How to run it :
+Navigate to the project directory : cd main.sh
+run it 
 
 
 
