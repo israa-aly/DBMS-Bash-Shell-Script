@@ -1,0 +1,30 @@
+#!/bin/bash
+function remove {
+    table_name=$(zenity --list --title="Choose a table to delete" --column="Tables" $(ls tables))
+
+    if [ $? -ne 0 ]; then
+        return
+    fi
+
+    if [ -z "$table_name" ]; then
+        zenity --error --text="Invalid option. Please select a table."
+        return
+    fi
+
+    zenity --question --title="Confirm Deletion" --text="Are you sure you want to delete the table '$table_name'?" --ok-label="Yes" --cancel-label="No"
+
+    
+    if [ $? -ne 0 ]; then
+        return
+    fi
+
+    if [ $? -eq 0 ]; then
+       
+        rm "tables/$table_name"
+        rm "metaData/${table_name}meta"
+        zenity --info --text="Table '$table_name' has been deleted successfully."
+    else
+        zenity --info --text="Deletion canceled."
+    fi
+}
+

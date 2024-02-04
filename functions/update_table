@@ -1,0 +1,72 @@
+#!/bin/bash
+function update_f_table {
+    tbl=$(zenity --entry --title="Update Table" --text="Enter table name:")
+
+    if [ ! -f "tables/$tbl" ]; then
+        zenity --error --text="Error: Table '$tbl' not found."
+        return
+    fi
+
+    # Reset arrays at the beginning of the function
+    arrcol=()
+    arrval=()
+
+    column_names=($(awk -F':' 'NR==1 {for (i=1; i<=NF; i++) print $i}' "tables/$tbl"))
+
+    # Display column names in Zenity
+    menu_text="Column names in '$tbl':"
+    for ((i=1; i<=${#column_names[@]}; i++)); do
+        menu_text+="\n $i. ${column_names[$((i-1))]}"
+    done
+
+    col=$(zenity --entry --title="Update Table" --text="$menu_text\n\nEnter the column for the condition:")
+
+    if [[ $col -ge 1 && $col -le ${#column_names[@]} ]]; then
+        arrcol+=("$col")  # Add the column to the array
+
+        val=$(zenity --entry --title="Update Table" --text="Enter the value for the condition:")
+        arrval+=("$val")  # Add the value to the array
+
+        # Collect update information
+        update_col=$(zenity --entry --title="Update Table" --text="Enter the column to update:")
+
+        if [[ $update_col -eq 1 ]]; then
+            zenity --error --text="The primary key cannot be edited."
+        else
+            update_val=$(zenity --entry --title="Update Table" --text="Enter the new value:")
+
+            constraints=$(awk -F ':' '{print $2}' "metaData/${tbl}meta" | tr '\n' ':')
+            constraints=${constraints%:}  # Remove trailing colon
+            IFS=':' read -r -a constraints_array <<< "$constraints"
+            if violates_constraints "$update_val" "${constraints_array[$((update_col-1))]}"; then
+                zenity --error --text="Error: The new value violates constraints for column $update_col. it should be ${constraints_array[$((update_col-1))]}"
+            else
+                # Perform update using awk
+                updated_count=$(awk -v col="$col" -v val="$val" -v ucol="$update_col" -v uval="$update_val" -F':' '
+                    BEGIN {
+                        updated_count = 0
+      
+              }
+                    {
+                        if ($col == val) {
+                            # Update the specific field while preserving the original separator
+                            $ucol = uval
+                            gsub(/ /, ":", $0)
+                            updated_count++
+                        }
+                        print $0 > "tempfile"
+                    }
+                    END {
+                        close("tempfile")
+                        system("mv tempfile " FILENAME)
+                        print updated_count
+                    }' "tables/$tbl")
+
+                zenity --info --text="Rows updated: $updated_count"
+            fi
+        fi
+    else
+        zenity --error --text="Invalid input. Please enter a valid number."
+    fi
+}
+

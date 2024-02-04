@@ -1,0 +1,103 @@
+#!/bin/bash
+
+function create {
+    table_name=$(zenity --entry --title="Create Table" --text="Please enter the table name:")
+
+    if [ $? -ne 0 ]; then
+        echo "Operation canceled."
+        return
+    fi
+
+    table_name=$(echo "$table_name" | tr ' ' '_')
+
+    if [[ -z "$table_name" ]] || [[ ! "${table_name:0:1}" =~ [a-zA-Z] ]] || containsSpecialChars "$table_name"; then
+        zenity --error --title="Error" --text="Invalid table name. Table name must start with a letter and cannot contain special characters except for underscores."
+        return
+    fi
+
+    if [ -e "tables/$table_name" ] || [ -e "metaData/${table_name}meta" ]; then
+        zenity --error --title="Error" --text="Table $table_name already exists. Please choose a different name."
+        return
+    fi
+
+    touch "tables/$table_name"
+    touch "metaData/${table_name}meta"
+
+    num_fields=$(zenity --entry --title="Create Table" --text="Enter the number of required fields, ensuring that the first column will be the unique id:")
+
+    if ! [[ $num_fields =~ ^[0-9]+$ ]]; then
+
+        zenity --error --title="Error" --text="Please enter a valid number for the fields."
+if [ ! -s "$table_name" ]; then
+		rm "tables/$table_name"
+                rm "metaData/${table_name}meta"
+	    fi
+        return
+
+        return
+    fi
+
+    if [ "$num_fields" -eq 0 ]; then
+        zenity --error --title="Error" --text="Please enter a valid number greater than 0."
+if [ ! -s "$table_name" ]; then
+		rm "tables/$table_name"
+                rm "metaData/${table_name}meta"
+	    fi
+        return
+        return
+    fi
+
+    entered_fields=()
+
+    f=1
+    while [ "$f" -le "$num_fields" ]; do
+        field=$(zenity --entry --title="Create Table" --text="Enter field $f name:")
+
+        if [ $? -ne 0 ]; then
+	    if [ ! -s "$table_name" ]; then
+		rm "tables/$table_name"
+                rm "metaData/${table_name}meta"
+	    fi
+	    echo "Operation canceled."
+zenity --error --title="Error" --text="The tables is not created"
+	    return
+	fi
+        field=$(echo "$field" | tr ' ' '_')
+
+        if [[ -z "$field" ]] || [[ ! "${field:0:1}" =~ [a-zA-Z] ]] || containsSpecialChars "$field"; then
+            zenity --error --title="Error" --text="Invalid field name. Field name must start with a letter and cannot contain special characters except for underscores."
+            continue
+        fi
+
+        if [[ " ${entered_fields[@]} " =~ " $field " ]]; then
+            zenity --error --title="Error" --text="Field name '$field' already entered. Please choose a different name."
+            continue
+        fi
+
+        entered_fields+=("$field")  # Add the field name to the array
+
+        dtype=$(zenity --list --title="Create Table" --text="Select the datatype of field $field:" --column="Options" "Int" "String")
+
+        case $dtype in
+            "Int")
+                echo "$field:Int" >> "metaData/${table_name}meta"
+                ;;
+            "String")
+                echo "$field:String" >> "metaData/${table_name}meta"
+                ;;
+            *)
+                zenity --error --title="Error" --text="Invalid option. Please select again."
+                continue
+                ;;
+        esac
+
+        f=$((f+1))
+    done
+
+    field_names=$(awk -F ":" '{print $1}' "metaData/${table_name}meta" | tr '\n' ':')
+    field_names=${field_names%:}  
+    echo "$field_names" >> "tables/${table_name}"
+
+    zenity --info --title="Success" --text="Table $table_name created successfully."
+}
+

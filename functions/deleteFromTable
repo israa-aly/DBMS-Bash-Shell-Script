@@ -1,0 +1,91 @@
+#!/bin/bash
+function delete_f_table {
+    tbl=$(zenity --entry --title="Delete Table" --text="Enter table name:")
+
+    if [ $? -ne 0 ]; then
+        return
+    fi
+
+    if [ ! -f "tables/$tbl" ]; then
+        zenity --error --text="Error: Invalid Table name."
+        return
+    fi
+
+    column_names=($(awk -F':' 'NR==1 {for (i=1; i<=NF; i++) print $i}' "tables/$tbl"))
+
+    menu_text="Select the number of conditions:\n"
+    for ((i=1; i<=${#column_names[@]}; i++)); do
+        menu_text+=" $i. ${column_names[$((i-1))]}\n"
+    done
+
+    num=$(zenity --entry --title="Number of Conditions" --text="$menu_text" --entry-text="1")
+
+    if [ $? -ne 0 ]; then
+        return
+    fi
+
+    if [[ ! $num =~ ^[1-9][0-9]*$ || $num -gt ${#column_names[@]} ]]; then
+        zenity --error --text="Invalid input. Please enter a valid number."
+        return
+    fi
+
+    arrcol=()
+    arrval=()
+
+    for ((i=1; i<=$num; i++)); do
+        col=$(zenity --entry --title="Enter Column $i" --text="Enter column $i of condition:")
+
+        if [ $? -ne 0 ]; then
+            return
+        fi
+
+        if [[ ! $col =~ ^[1-9][0-9]*$ || $col -gt ${#column_names[@]} ]]; then
+            zenity --error --text="Invalid input. Please enter a valid number."
+            return
+        fi
+
+        arrcol+=("$col")  # Add the column to the array
+
+        val=$(zenity --entry --title="Enter Value $i" --text="Enter value of column $i of the condition:")
+
+        if [ $? -ne 0 ]; then
+            return
+        fi
+
+        arrval+=("$val")  # Add the value to the array
+    done
+
+  deleted_count=$(awk -v num="$num" -v cols="${arrcol[*]}" -v vals="${arrval[*]}" -F':' '
+    BEGIN {
+        split(cols,arrcol," ")
+        split(vals,arrval," ")
+        deleted_count = 0
+        is_first_line = 1
+    }
+    {
+        if (is_first_line) {
+            print $0 > "tempfile";
+            is_first_line = 0;
+            next;  # Skip to the next iteration without processing further
+        }
+
+        match_count=0
+        for (i = 1; i <= num; i++) {
+            if ($(arrcol[i]) == arrval[i]) {
+                match_count++
+                deleted_count++
+            }
+        }
+        if (match_count == 0) {
+            print $0 > "tempfile";
+        }
+    }
+    END {
+        close("tempfile");
+        system("mv tempfile " FILENAME);
+        print "Rows deleted: " deleted_count
+    }' "tables/$tbl")
+
+    zenity --info --text="Rows deleted: $deleted_count"
+}
+

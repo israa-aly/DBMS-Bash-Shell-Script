@@ -1,0 +1,22 @@
+#!/bin/bash
+function containsSpecialChars() {
+    if [[ "$1" =~ [^a-zA-Z0-9_[:space:]] ]]; then
+        return 0  
+    else
+        return 1  
+    fi
+}
+function violates_constraints {
+    case "$2" in
+        "Int")
+            [[ "$1" =~ ^[0-9]+$ ]] || return 0  # Violates constraint: Value is not an integer
+            ;;
+        "String")
+            [[ "$1" =~ ^[a-zA-Z]+$ && ! "$1" =~ [[:space:]] ]] || return 0  # Violates constraint: Value is not a string or contains spaces
+            ;;
+        *)
+            ;;
+    esac
+    return 1  
+}
+

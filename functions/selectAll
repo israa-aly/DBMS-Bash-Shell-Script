@@ -1,0 +1,14 @@
+#!/bin/bash
+
+function select_all {
+    table_name=$1
+if [ ! -f "tables/$table_name" ]; then
+	zenity --error --title="Error" --text="Invalid table name "
+	    return
+
+	else
+    content=$(cat "tables/$table_name")
+    zenity --info --title="Select All" --text="Content of $table_name:\n$content"
+fi
+}
+

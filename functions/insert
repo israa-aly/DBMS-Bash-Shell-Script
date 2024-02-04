@@ -1,0 +1,94 @@
+#!/bin/bash
+function insert() {
+    
+    table_name=$(zenity --list --title="Select table to insert into" --column="Table Name" $(ls tables))
+
+    case $? in
+        0) 
+            ;;
+        1) 
+            echo "Operation canceled by user."
+            return
+            ;;
+
+        -1) 
+            echo "Error or dialog closed."
+            return
+            ;;
+    esac
+
+    if [ -z "$table_name" ]; then
+        echo "Invalid option.Please select again."
+        return
+    fi
+
+    values_array=()
+    metaFile="metaData/${table_name}meta"
+    dataFile="tables/${table_name}"
+
+  
+    field_names=$(awk -F ":" '{print $1}' "$metaFile" | tr '\n' ':')
+    constraints=$(awk -F ":" '{print $2}' "$metaFile" | tr '\n' ':')
+    IFS=":" read -ra field_names_array <<< "$field_names"
+
+    i=0
+    for field in "${field_names_array[@]}"; do
+        constraint=$(echo "$constraints" | cut -d ':' -f $((i+1)))
+
+       
+        user_input=$(zenity --entry --title="Enter value for $field of datatype $constraint" --text="$field:")
+
+        case $? in
+            0) 
+                ;;
+            1) 
+                echo "Operation canceled by user."
+                return
+                ;;
+            -1)
+                echo "Error or dialog closed."
+                return
+                ;;
+        esac
+
+        values_array+=("$user_input")
+        i=$((i+1))
+    done
+
+    
+    Ids=($(cut -d ':' -f 1 "$dataFile"))
+    if echo "${Ids[@]}" | grep -q "\<${values_array[0]}\>"; then
+        zenity --error --text="Error: ID '${values_array[0]}' already exists in the table '$table_name'. Insertion failed."
+        return
+    fi
+
+   
+    for ((i=0; i<${#values_array[@]}; i++)); do
+        field_name=$(echo "$field_names" | cut -d ':' -f $((i+1)))
+        constraint=$(echo "$constraints" | cut -d ':' -f $((i+1)))
+
+        
+        case "$constraint" in
+            "Int")
+                [[ "${values_array[i]}" =~ ^[0-9]+$ ]] || {
+                    zenity --error --text="Invalid input for $field_name. Must be an integer."
+                    return
+                }
+                ;;
+             "String")
+                # Allow both alphabetic and numeric characters
+                [[ "${values_array[i]}" =~ ^[a-zA-Z0-9]+$ ]] || {
+                    zenity --error --text="Invalid input for $field_name. Must be a string and may contain numbers."
+                    return
+                }
+                ;;
+            *)
+                ;;
+        esac
+    done
+
+  
+    echo "${values_array[@]}" | tr ' ' ':' >> "$dataFile"
+    zenity --info --text="Table '$table_name' has been inserted successfully."
+}
+
