@@ -17,6 +17,7 @@ This project is a simple Database Management System (DBMS) shell implemented in 
 
 # File Structure
 main.sh: Main script to start the DBMS shell.
+
 functions/: Directory containing individual Bash scripts for different DBMS functions.
 
 # How to run it :
